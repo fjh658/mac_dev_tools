@@ -1,7 +1,11 @@
 ### instruments, AccessibilityInspector etc do not depend on xcode to work, used for remote app diagnosis.
 - dmg
 <img width="567" alt="image" src="https://user-images.githubusercontent.com/5550316/171799665-d4c5d67c-ee50-4d69-afda-a771ec2be5b4.png">
-
+- app remove quarantine
+  ```
+   xattr -rd com.apple.quarantine /Applications/Instruments.app
+   xattr -rd com.apple.quarantine /Applications/Accessibility\ Inspector.app
+  ```
 - Project structure
 <img width="451" alt="image" src="https://user-images.githubusercontent.com/5550316/171845810-95c32dc4-6a52-4568-9cd9-6ec2bdf07755.png">
 

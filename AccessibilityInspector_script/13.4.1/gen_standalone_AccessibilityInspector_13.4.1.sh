@@ -91,6 +91,6 @@ rm -rf "${TARGET_PATH}/AccessibilitySupport.framework/Versions/B/Frameworks/Acce
 # mkdir -p "${TARGET_ROOT_PATH}/Accessibility Inspector.app/Contents/Developer/Platforms/"
 # cp -Rf "${XCODE_PATH}/Contents/Developer/Platforms/MacOSX.platform" "${TARGET_ROOT_PATH}/Accessibility Inspector.app/Contents/Developer/Platforms/"
 
-# 骗过检查
+# fake SDK check
 cp -Rf ${TARGET_ROOT_PATH}/Developer "${TARGET_ROOT_PATH}/Accessibility Inspector.app/Contents/"
 echo "Generate standalone Accessibility Inspector is done! "

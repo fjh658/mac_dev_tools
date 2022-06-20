@@ -81,4 +81,6 @@ done
 # Developer/Platforms/MacOSX.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib to Instruments.app/Contents/Frameworks/libXCTestSwiftSupport.dylib
 cp -Rf "${XCODE_PATH}/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib" "${TARGET_PATH}"
 
+# fake SDK check
+cp -Rf ${TARGET_ROOT_PATH}/Developer "${TARGET_ROOT_PATH}/Instruments.app/Contents/"
 echo "Generate standalone Instruments is done! "

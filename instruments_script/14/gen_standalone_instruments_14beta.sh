@@ -81,6 +81,11 @@ done
 # Developer/Platforms/MacOSX.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib to Instruments.app/Contents/Frameworks/libXCTestSwiftSupport.dylib
 cp -Rf "${XCODE_PATH}/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib" "${TARGET_PATH}"
 
+# fixed The bundle “Devices” couldn’t be loaded. Try reinstalling the bundle.
+cp -Rf "/Library/Developer/PrivateFrameworks/CoreSimulator.framework" ${TARGET_PATH}
+cp -Rf "/Library/Developer/PrivateFrameworks/ROCKit.framework" ${TARGET_PATH}
+
+cp -Rf ./fix.sh "${TARGET_ROOT_PATH}/Instruments.app/Contents/MacOS/"
 # fake SDK check
 cp -Rf ${TARGET_ROOT_PATH}/Developer "${TARGET_ROOT_PATH}/Instruments.app/Contents/"
 echo "Generate standalone Instruments is done! "

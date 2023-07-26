@@ -15,3 +15,8 @@ if [ ! -d "${DEV_PRIV_FX}/ROCKit.framework" ]; then
     mkdir -p "${DEV_PRIV_FX}"
     cp -Rf "../Frameworks/ROCKit.framework" "${DEV_PRIV_FX}"    
 fi
+
+if [ ! -d "${DEV_PRIV_FX}/CoreDevice.framework" ]; then
+    mkdir -p "${DEV_PRIV_FX}"
+    cp -Rf "../Frameworks/CoreDevice.framework" "${DEV_PRIV_FX}"    
+fi

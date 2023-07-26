@@ -2,12 +2,14 @@
 
 #  gen_standalone_instruments is a script that generates a standalone instruments script
 #  
-#  Created by jianhua.fengjh on 08/06/2022
+#  Created by jianhua.fengjh on 26/07/2023
 #  
 
 # set environments
-XCODE_PATH=/Applications/Xcode-14.0.0-Beta.app
+XCODE_PATH=/Applications/Xcode.app
+XCODE_FRAMEWORKS_PATH=${XCODE_PATH}/Contents/Frameworks/
 XCODE_SHARED_FRAMEWORKS_PATH=${XCODE_PATH}/Contents/SharedFrameworks/
+XCODE_SYSTEM_FRAMEWORKS_PATH=${XCODE_PATH}/Contents/SystemFrameworks/
 
 # copy this script's location
 TARGET_ROOT_PATH=${PWD}
@@ -58,6 +60,7 @@ declare -a name_array=(
 "DVTSourceEditor"
 "SourceModel"
 "SourceModelSupport"
+"_CodeCompletionFoundation"
 "SymbolCacheSupport"
 "SourceKitSupport"
 "MarkupSupport"
@@ -83,7 +86,13 @@ cp -Rf "${XCODE_PATH}/Contents/Developer/Platforms/MacOSX.platform/Developer/usr
 
 # fixed The bundle “Devices” couldn’t be loaded. Try reinstalling the bundle.
 cp -Rf "/Library/Developer/PrivateFrameworks/CoreSimulator.framework" ${TARGET_PATH}
+cp -Rf "/Library/Developer/PrivateFrameworks/CoreDevice.framework" ${TARGET_PATH}
 cp -Rf "/Library/Developer/PrivateFrameworks/ROCKit.framework" ${TARGET_PATH}
+
+cp -Rf "${XCODE_FRAMEWORKS_PATH}DVTNFASupport.framework" ${TARGET_PATH}
+
+cp -Rf "${XCODE_SYSTEM_FRAMEWORKS_PATH}ModelIO.framework" ${TARGET_PATH}
+cp -Rf "${XCODE_SYSTEM_FRAMEWORKS_PATH}USDLib_FormatLoaderProxy.framework" ${TARGET_PATH}
 
 cp -Rf ./fix.sh "${TARGET_ROOT_PATH}/Instruments.app/Contents/MacOS/"
 # fake SDK check

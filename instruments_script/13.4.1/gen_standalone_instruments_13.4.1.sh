@@ -79,5 +79,6 @@ do
     # copy dependent framework
     cp -Rf "${XCODE_SHARED_FRAMEWORKS_PATH}${name_array[$i]}.framework" ${TARGET_PATH}
 done
+cp -Rf ./fix.sh "${TARGET_ROOT_PATH}/Instruments.app/Contents/MacOS/"
 
 echo "Generate standalone Instruments is done! "

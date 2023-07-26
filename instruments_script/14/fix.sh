@@ -20,3 +20,7 @@ if [ ! -d "${DEV_PRIV_FX}/CoreDevice.framework" ]; then
     mkdir -p "${DEV_PRIV_FX}"
     cp -Rf "../Frameworks/CoreDevice.framework" "${DEV_PRIV_FX}"    
 fi
+
+SHELL_PATH=$(dirname "$(readlink -f "$0")")
+rm -rf $SHELL_PATH/../XCSystemFrameworks
+xattr -rd com.apple.quarantine $SHELL_PATH/../../../

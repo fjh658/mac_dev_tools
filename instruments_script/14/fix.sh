@@ -23,4 +23,4 @@ fi
 
 SHELL_PATH=$(dirname "$(readlink -f "$0")")
 rm -rf $SHELL_PATH/../XCSystemFrameworks
-xattr -rd com.apple.quarantine $SHELL_PATH/../../../
+xattr -rd com.apple.quarantine $SHELL_PATH/../../

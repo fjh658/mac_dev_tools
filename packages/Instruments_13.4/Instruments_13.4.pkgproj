@@ -480,9 +480,9 @@
 				<key>POSTINSTALL_PATH</key>
 				<dict>
 					<key>PATH</key>
-					<string>/Applications/Instruments_13.4.app/Contents/MacOS/fix.sh</string>
+					<string>../../instruments_script/13.4.1/fix_applications.sh</string>
 					<key>PATH_TYPE</key>
-					<integer>0</integer>
+					<integer>1</integer>
 				</dict>
 				<key>PREINSTALL_PATH</key>
 				<dict>

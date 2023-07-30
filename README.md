@@ -1,25 +1,26 @@
-### instruments, AccessibilityInspector etc do not depend on xcode to work, used for remote app diagnosis.
-#### Usage
-- dmg
-<img width="567" alt="image" src="https://user-images.githubusercontent.com/5550316/171799665-d4c5d67c-ee50-4d69-afda-a771ec2be5b4.png">
+##### The purpose of this project:
 
-- app remove quarantine
-  ```
-   xattr -rd com.apple.quarantine /Applications/Instruments.app
-   xattr -rd com.apple.quarantine /Applications/Accessibility\ Inspector.app
-  ```
+- Utilize Xcode's analysis function to generate standalone applications that are independent of Xcode. These apps will enable remote problem diagnosis between users.
+  
+- Apps
+  
+  - Instruments
+    
+  - Accessibility Inspector
+    
 
-#### Build
-- Project structure
-<img width="465" alt="image" src="https://user-images.githubusercontent.com/5550316/174644651-2f891364-cad2-4aab-8f39-b384c61ecb59.png">
+##### Quick start
+
+- Download **Instruments_14.3.1.dmg** (macOS 12+), double click the dmg, righ click **Instruments_14.3.1.pkg**
+<img src="https://github.com/fjh658/mac_dev_tools/assets/5550316/a3d42c53-0c08-4713-bedf-ae249a52e0f6" width="420" height="380">
 
 
-- Generate standalone instruments app
-```
-sh gen_standalone_instruments_13.4.1.sh
-```
+- Application location: /Applications
 
-- Generate standalone AccessibilityInspector app
-```
-sh gen_standalone_AccessibilityInspector_13.4.1.sh
-```
+##### Build
+
+- Install **Packages** tool
+  
+- open packages/Instruments_14.3.1/Instruments_14.3.1.pkgproj
+  
+- **build**

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+APP_PATH="/Applications/AccessibilityInspector_14.3.1.app"
+xattr -rd com.apple.quarantine ${APP_PATH}

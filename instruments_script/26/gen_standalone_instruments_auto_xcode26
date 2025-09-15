@@ -1,0 +1,389 @@
+#!/bin/bash
+# Standalone Instruments packer for Xcode 26
+# Works with macOS /bin/bash (3.2). No third-party bash features.
+
+# To generate the dyld log, run:
+# DYLD_PRINT_LIBRARIES=1 DYLD_PRINT_LIBRARIES_POST_LAUNCH=1 DYLD_PRINT_RPATHS=1 /Applications/Xcode.app/Contents/Applications/Instruments.app/Contents/MacOS/Instruments
+# > Instruments_26_loaded.log
+# ./gen_standalone_instruments_auto_xcode26 Instruments_26_loaded.log /Applications/Xcode.app ./target/
+
+set -e
+
+# -------- version / usage -----------------------------------------------------
+SCRIPT_VERSION="1.0.0"
+
+version() { echo "$(basename "$0") ${SCRIPT_VERSION}"; }
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  gen_standalone_instruments_auto_xcode26.sh [options] <dyld_log> <Xcode.app> <dest_dir>
+
+Options:
+  --dev-dylibs=<mode>       auto|min|log|all|none   (default: auto)
+  --dev-dylibs-extra=<list> Extra dylibs from Developer/usr/lib, comma or space separated
+  -h | --help               Show help
+  -V | --version            Show version
+
+Notes:
+- Uses rsync if available; falls back to ditto.
+- SharedFrameworks go to Contents/Independence/SharedFrameworks.
+- DVTNFASupport.framework goes to Contents/Independence.
+- Developer PrivateFrameworks are staged for fix.sh to install into /Library/Developer/PrivateFrameworks.
+USAGE
+}
+
+# -------- tiny print helpers --------------------------------------------------
+say()  { echo "$@"; }
+step() { echo "-> $@"; }
+add()  { echo "     + $@"; }
+
+# -------- copy helpers (rsync/ditto) -----------------------------------------
+_has_cmd() { command -v "$1" >/dev/null 2>&1; }
+
+rsync_supports() { /usr/bin/rsync --help 2>/dev/null | grep -q -- "$1"; }
+
+copyitem() {
+  # copy single file or directory preserving attributes
+  local src="$1" dst="$2"
+  local dstdir
+  dstdir="$(dirname "$dst")"
+  [ -d "$dstdir" ] || mkdir -p "$dstdir"
+  if _has_cmd /usr/bin/rsync; then
+    local opts="-aE"
+    rsync_supports "--fileflags" && opts="${opts} --fileflags"
+    rsync_supports "--crtimes"   && opts="${opts} --crtimes"
+    /usr/bin/rsync ${opts} "$src" "$dst"
+  else
+    /usr/bin/ditto "$src" "$dst"
+  fi
+}
+
+copytree() {
+  local src="$1" dst="$2"
+  [ -d "$dst" ] || mkdir -p "$dst"
+  if _has_cmd /usr/bin/rsync; then
+    local opts="-aE"
+    rsync_supports "--fileflags" && opts="${opts} --fileflags"
+    rsync_supports "--crtimes"   && opts="${opts} --crtimes"
+    /usr/bin/rsync ${opts} "$src"/ "$dst"/
+  else
+    /usr/bin/ditto "$src" "$dst"
+  fi
+}
+
+# -------- parse DYLD log ------------------------------------------------------
+# Robust grep/awk that works with macOS awk. We do not rely on character classes beyond standard ones.
+
+# extract base names like DVTFoundation.framework from any ".../SharedFrameworks/<name>.framework..."
+parse_shared_fw_names() {
+  local log="$1"
+  grep -Eo 'SharedFrameworks/[^/]+\.framework' "$log" 2>/dev/null \
+    | sed -E 's#^SharedFrameworks/##' \
+    | sort -u
+}
+
+# extract base names from ".../Frameworks/<name>.framework..."
+parse_framework_names() {
+  local log="$1"
+  grep -Eo '/Frameworks/[^/]+\.framework' "$log" 2>/dev/null \
+    | sed -E 's#^.*/Frameworks/##' \
+    | sort -u
+}
+
+# extract names from "/Library/Developer/PrivateFrameworks/<name>.framework"
+parse_dev_privfw_names() {
+  local log="$1"
+  grep -Eo '/Library/Developer/PrivateFrameworks/[^/]+\.framework' "$log" 2>/dev/null \
+    | sed -E 's#.*/PrivateFrameworks/##' \
+    | sort -u
+}
+
+# extract absolute paths to Developer/usr/lib/*.dylib as they appeared in the log
+parse_dyld_dev_dylibs() {
+  local log="$1"
+  grep -Eo '/.*/Developer/usr/lib/[^ ]+\.dylib' "$log" 2>/dev/null | sort -u
+}
+
+# -------- developer dylibs policy --------------------------------------------
+DEV_DYLIBS_MODE="auto"
+DEV_DYLIBS_EXTRA=""
+
+MIN_DYLIBS_DEFAULT=(
+  libhwtrace.dylib
+  libhwtrace_shim.dylib
+  libBacktraceRecording.dylib
+  libLeaksAtExit.dylib
+  libMainThreadChecker.dylib
+  libLogRedirect.dylib
+)
+
+install_dev_dylibs() {
+  # $1 mode; $2 Xcode Contents; $3 dst Frameworks; $4 dyld log
+  local mode="$1" xcontents="$2" dst_fw="$3" dyld_log="$4"
+  local src_dir="${xcontents}/Developer/usr/lib"
+
+  [ -d "$dst_fw" ] || mkdir -p "$dst_fw"
+  step "Copy dylibs (mode: ${mode})"
+
+  # temp list (file list), dedup at the end
+  local tmplist
+  tmplist="$(mktemp -t inst_dylibs.XXXXXX)"
+  # ensure cleanup
+  trap 'rm -f "$tmplist"' EXIT
+
+  case "$mode" in
+    none) : ;;
+    log)
+      parse_dyld_dev_dylibs "$dyld_log" >>"$tmplist"
+      ;;
+    min)
+      local n
+      for n in "${MIN_DYLIBS_DEFAULT[@]}"; do
+        [ -f "${src_dir}/${n}" ] && echo "${src_dir}/${n}" >>"$tmplist"
+      done
+      ;;
+    all)
+      if [ -d "$src_dir" ]; then
+        find "$src_dir" -maxdepth 1 -type f -name '*.dylib' -print >>"$tmplist"
+      fi
+      ;;
+    auto|*)
+      parse_dyld_dev_dylibs "$dyld_log" >>"$tmplist"
+      local n
+      for n in "${MIN_DYLIBS_DEFAULT[@]}"; do
+        [ -f "${src_dir}/${n}" ] && echo "${src_dir}/${n}" >>"$tmplist"
+      done
+      if ! [ -s "$tmplist" ] && [ -d "$src_dir" ]; then
+        find "$src_dir" -maxdepth 1 -type f -name '*.dylib' -print >>"$tmplist"
+      fi
+      ;;
+  esac
+
+  # extras
+  if [ -n "$DEV_DYLIBS_EXTRA" ]; then
+    # split by comma or space
+    echo "$DEV_DYLIBS_EXTRA" | tr ',' ' ' | while read -r nm; do
+      [ -z "$nm" ] && continue
+      [ -f "${src_dir}/${nm}" ] && echo "${src_dir}/${nm}" >>"$tmplist"
+    done
+  fi
+
+  # copy unique list; skip system libobjc-trampolines
+  if [ -s "$tmplist" ]; then
+    sort -u "$tmplist" | while read -r p; do
+      [ -z "$p" ] && continue
+      case "$p" in
+        */libobjc-trampolines.dylib) continue ;;
+      esac
+      local name; name="$(basename "$p")"
+      if [ ! -f "${dst_fw}/${name}" ]; then
+        add "$name"
+        copyitem "$p" "${dst_fw}/${name}"
+      fi
+    done
+  fi
+}
+
+# -------- platform metadata (minimal) ----------------------------------------
+copy_sdk_min_meta() {
+  # $1 platform dir under Xcode Contents/Developer/Platforms (e.g. MacOSX.platform)
+  # $2 dest base (Contents/Developer/Platforms)
+  local plat="$1" dst_base="$2" xplat_dir="$XCONTENTS/Developer/Platforms/$plat"
+  local dst_plat="$dst_base/$plat"
+
+  [ -d "$xplat_dir" ] || return 0
+
+  mkdir -p "$dst_plat"
+  # optional top-level metadata
+  [ -f "$xplat_dir/Info.plist" ]     && copyitem "$xplat_dir/Info.plist"     "$dst_plat/Info.plist"
+  [ -f "$xplat_dir/version.plist" ]  && copyitem "$xplat_dir/version.plist"  "$dst_plat/version.plist"
+
+  # choose a real .sdk folder (not alias) if possible
+  local sdkdir
+  sdkdir="$(/bin/ls -1 "$xplat_dir/Developer/SDKs" 2>/dev/null | grep '\.sdk$' | head -n1)"
+  [ -n "$sdkdir" ] || return 0
+
+  local xsdk="$xplat_dir/Developer/SDKs/$sdkdir"
+  local dst_sdk_dir="$dst_plat/Developer/SDKs"
+  local dst_sdk="$dst_sdk_dir/$(echo "$plat" | sed 's/platform$//;s/.$//').sdk" # name like MacOSX.sdk, iPhoneOS.sdk, iPhoneSimulator.sdk
+
+  mkdir -p "$dst_sdk"
+  mkdir -p "$dst_sdk_dir"
+
+  # known tiny files
+  for f in SDKSettings.json SDKSettings.plist Entitlements.plist; do
+    if [ -f "$xsdk/$f" ]; then
+      copyitem "$xsdk/$f" "$dst_sdk/$f"
+    fi
+  done
+}
+
+install_min_platform_metadata() {
+  local dst_dev="$1"
+  step "Install minimal platform metadata"
+  local plats_base="$dst_dev/Platforms"
+  mkdir -p "$plats_base"
+  copy_sdk_min_meta "MacOSX.platform"         "$plats_base" && add "MacOSX.platform (SDKSettings*, Entitlements)"
+  copy_sdk_min_meta "iPhoneOS.platform"       "$plats_base" && add "iPhoneOS.platform (SDKSettings*, Entitlements)"
+  copy_sdk_min_meta "iPhoneSimulator.platform" "$plats_base" && add "iPhoneSimulator.platform (SDKSettings*, Entitlements)"
+}
+
+# -------- fix.sh generator ----------------------------------------------------
+write_fix_sh() {
+  local app_dst="$1"
+  local fix="$app_dst/Contents/MacOS/fix.sh"
+  step "Write fix.sh"
+  cat >"$fix" <<'FIXSH'
+#!/bin/bash
+set -e
+
+# Remove quarantine recursively (best effort)
+if command -v xattr >/dev/null 2>&1; then
+  xattr -dr com.apple.quarantine "$(cd "$(dirname "$0")/.."; pwd)" 2>/dev/null || true
+fi
+
+# Install missing /Library/Developer/PrivateFrameworks from staged copies
+SRC_BASE="$(cd "$(dirname "$0")/.."; pwd)"
+STAGED="${SRC_BASE}/Frameworks/_DevPFx"
+DEST="/Library/Developer/PrivateFrameworks"
+
+need_fw=( CoreSimulator.framework CoreDevice.framework CoreDeviceUtilities.framework ROCKit.framework DVTDownloads.framework )
+
+echo "[fix] install missing Developer PrivateFrameworks..."
+for n in "${need_fw[@]}"; do
+  if [ ! -d "${DEST}/${n}" ] && [ -d "${STAGED}/${n}" ]; then
+    echo "  + ${n}"
+    sudo /usr/bin/ditto "${STAGED}/${n}" "${DEST}/${n}"
+  fi
+done
+
+echo "[fix] done."
+FIXSH
+  chmod +x "$fix"
+}
+
+# -------- main ---------------------------------------------------------------
+main() {
+  local argv=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --dev-dylibs=*)
+        DEV_DYLIBS_MODE="${1#*=}"; shift ;;
+      --dev-dylibs-extra=*)
+        DEV_DYLIBS_EXTRA="${1#*=}"; shift ;;
+      -h|--help)
+        usage; exit 0 ;;
+      -V|--version)
+        version; exit 0 ;;
+      --) shift; break ;;
+      -*)
+        echo "Unknown option: $1" 1>&2; usage; exit 1 ;;
+      *)
+        argv+=("$1"); shift ;;
+    esac
+  done
+
+  # positional
+  if [ ${#argv[@]} -ne 3 ]; then
+    usage; exit 1
+  fi
+
+  local DYLD_LOG="${argv[0]}"
+  local XCODE_APP="${argv[1]%/}"
+  local DEST_DIR="${argv[2]%/}"
+
+  if [ ! -f "$DYLD_LOG" ]; then echo "dyld log not found: $DYLD_LOG" 1>&2; exit 1; fi
+  if [ ! -d "$XCODE_APP" ]; then echo "Xcode.app not found: $XCODE_APP" 1>&2; exit 1; fi
+  [ -d "$DEST_DIR" ] || mkdir -p "$DEST_DIR"
+
+  local XCONTENTS="$XCODE_APP/Contents"
+  local APP_DST="$DEST_DIR/Instruments.app"
+
+  step "Copy Instruments.app:"
+  add "$XCODE_APP/Contents/Applications/Instruments.app -> $APP_DST"
+  copytree "$XCODE_APP/Contents/Applications/Instruments.app" "$APP_DST"
+
+  # remove quarantine best-effort
+  if _has_cmd xattr; then
+    xattr -dr com.apple.quarantine "$APP_DST" 2>/dev/null || true
+  fi
+
+  step "Parse DYLD log (roots: $XCONTENTS, /Library/Developer/PrivateFrameworks)"
+  # shared frameworks
+  local shared_fw_names
+  shared_fw_names="$(parse_shared_fw_names "$DYLD_LOG")"
+  local fw_names
+  fw_names="$(parse_framework_names "$DYLD_LOG")"
+  local dev_pfx_names
+  dev_pfx_names="$(parse_dev_privfw_names "$DYLD_LOG")"
+  local dev_dylib_paths
+  dev_dylib_paths="$(parse_dyld_dev_dylibs "$DYLD_LOG")"
+
+  # counts
+  local c_sf c_fw c_pfx c_dl
+  c_sf=$(echo "$shared_fw_names" | sed '/^$/d' | wc -l | tr -d ' ')
+  c_fw=$(echo "$fw_names"         | sed '/^$/d' | wc -l | tr -d ' ')
+  c_pfx=$(echo "$dev_pfx_names"   | sed '/^$/d' | wc -l | tr -d ' ')
+  c_dl=$(echo "$dev_dylib_paths"  | sed '/^$/d' | wc -l | tr -d ' ')
+  say "     SharedFrameworks: $c_sf"
+  say "     Frameworks:       $c_fw"
+  say "     LibDev PFx:       $c_pfx"
+  say "     dylibs(log):      $c_dl"
+
+  # Copy SharedFrameworks into Independence/SharedFrameworks
+  local dst_indep="$APP_DST/Contents/Independence"
+  local dst_shared="$dst_indep/SharedFrameworks"
+  mkdir -p "$dst_shared"
+
+  step "Copy SharedFrameworks to Independence/SharedFrameworks"
+  echo "$shared_fw_names" | sed '/^$/d' | while read -r nm; do
+    [ -z "$nm" ] && continue
+    local src="$XCONTENTS/SharedFrameworks/$nm"
+    if [ -d "$src" ]; then
+      add "$nm"
+      copytree "$src" "$dst_shared/$nm"
+    fi
+  done
+
+  # Certain Frameworks go to Independence (DVTNFASupport is the notable one)
+  step "Copy Frameworks to Independence (specials)"
+  echo "$fw_names" | sed '/^$/d' | while read -r nm; do
+    case "$nm" in
+      DVTNFASupport.framework)
+        local src="$XCONTENTS/Frameworks/$nm"
+        if [ -d "$src" ]; then
+          add "$nm"
+          copytree "$src" "$dst_indep/$nm"
+        fi
+        ;;
+      *) : ;;
+    esac
+  done
+
+  # Stage Developer PrivateFrameworks fallbacks for fix.sh
+  step "Stash Developer PrivateFrameworks fallbacks"
+  local staged="$APP_DST/Contents/Frameworks/_DevPFx"
+  mkdir -p "$staged"
+  echo "$dev_pfx_names" | sed '/^$/d' | while read -r nm; do
+    local src="/Library/Developer/PrivateFrameworks/$nm"
+    if [ -d "$src" ]; then
+      add "$nm"
+      copytree "$src" "$staged/$nm"
+    fi
+  done
+
+  # Copy Developer/usr/lib dylibs per policy into Contents/Frameworks
+  install_dev_dylibs "$DEV_DYLIBS_MODE" "$XCONTENTS" "$APP_DST/Contents/Frameworks" "$DYLD_LOG"
+
+  # Minimal Platforms metadata
+  install_min_platform_metadata "$APP_DST/Contents/Developer"
+
+  # Write fix.sh
+  write_fix_sh "$APP_DST"
+
+  say "-> Done."
+  say "   Launch tip: if tracing complains about CoreSimulator/CoreDevice*, run once: 'Contents/MacOS/fix.sh' (will use sudo)."
+}
+
+main "$@"
